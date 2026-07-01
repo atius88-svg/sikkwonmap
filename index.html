@@ -4,35 +4,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>식권맵 · 을지로입구·시청·광화문·종각</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openlayers/4.6.5/ol.min.css">
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{width:100%;height:100%;font-family:"Helvetica Neue","Apple SD Gothic Neo","Malgun Gothic",sans-serif;}
+  #map{width:100%;height:100%;}
 
-  #map{width:100%;height:100%;position:relative;}
-
-  /* 상단 타이틀바 */
   .topbar{
     position:absolute;top:14px;left:50%;transform:translateX(-50%);
-    z-index:600;
-    background:#fff;
-    border-radius:999px;
-    padding:8px 20px;
-    box-shadow:0 2px 12px rgba(0,0,0,0.15);
-    display:flex;align-items:center;gap:12px;
-    white-space:nowrap;
+    z-index:5;
+    background:#fff;border-radius:999px;
+    padding:8px 20px;box-shadow:0 2px 12px rgba(0,0,0,0.15);
+    display:flex;align-items:center;gap:12px;white-space:nowrap;
   }
   .topbar h1{font-size:14px;font-weight:700;color:#1F2421;}
   .topbar .divider{color:#ccc;}
   .topbar .sub{font-size:12px;color:#6B6F68;}
 
-  /* 범례 */
   .legend{
-    position:absolute;bottom:30px;left:18px;z-index:500;
+    position:absolute;bottom:30px;left:18px;z-index:5;
     background:#fff;border:1px solid #E3E0D6;border-radius:12px;
     padding:10px 14px;font-size:11px;color:#6B6F68;
     box-shadow:0 2px 10px rgba(0,0,0,0.08);
-    max-height:400px;overflow-y:auto;
+    max-height:60vh;overflow-y:auto;
   }
   .legend-title{font-weight:700;color:#1F2421;margin-bottom:6px;font-size:11.5px;}
   .legend-row{display:flex;align-items:center;gap:7px;margin:3px 0;}
@@ -41,34 +34,44 @@
     display:flex;align-items:center;justify-content:center;font-size:9px;
   }
 
-  /* OpenLayers 팝업 오버라이드 */
-  .ol-popup{
-    position:absolute;background-color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.15);
-    padding:0;border-radius:14px;border:none;
-    bottom:12px;left:-50px;min-width:260px;
+  /* 커스텀 오버레이 마커 (풍선) */
+  .pill{
+    background:#fff;border:1.5px solid #1F2421;border-radius:999px;
+    padding:4px 10px 4px 4px;
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:11.5px;font-weight:700;color:#1F2421;white-space:nowrap;
+    box-shadow:0 1px 5px rgba(0,0,0,0.18);cursor:pointer;
+    transition:transform .1s,box-shadow .1s;
   }
-  .ol-popup:after{display:none;}
-  .ol-popup-closer{display:none;}
-  .popup-content{padding:14px 16px;}
-  
-  .popup-badge{
-    display:inline-flex;align-items:center;gap:5px;
-    font-size:11px;color:#6B6F68;margin-bottom:7px;
+  .pill:hover{transform:scale(1.06);box-shadow:0 2px 10px rgba(0,0,0,0.22);z-index:10;}
+  .pill-icon{
+    width:20px;height:20px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;font-size:11px;
   }
-  .popup-name{font-weight:700;font-size:15px;color:#1F2421;margin-bottom:5px;line-height:1.3;}
-  .popup-new{
-    display:inline-block;font-size:10px;font-weight:700;
-    background:#FFF1E5;color:#B5491F;
-    padding:1px 6px;border-radius:4px;margin-left:5px;vertical-align:middle;
+
+  /* 커스텀 팝업 오버레이 */
+  .popup{
+    background:#fff;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,0.18);
+    width:250px;padding:14px 16px;position:relative;
+    margin-bottom:14px;
   }
+  .popup:after{
+    content:"";position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);
+    border-left:9px solid transparent;border-right:9px solid transparent;
+    border-top:9px solid #fff;
+  }
+  .popup-close{
+    position:absolute;top:10px;right:12px;cursor:pointer;
+    font-size:16px;color:#aaa;line-height:1;border:none;background:none;
+  }
+  .popup-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#6B6F68;margin-bottom:7px;}
+  .popup-name{font-weight:700;font-size:15px;color:#1F2421;margin-bottom:5px;line-height:1.3;padding-right:14px;}
+  .popup-new{display:inline-block;font-size:10px;font-weight:700;background:#FFF1E5;color:#B5491F;padding:1px 6px;border-radius:4px;margin-left:5px;vertical-align:middle;}
   .popup-addr{font-size:12px;color:#6B6F68;line-height:1.5;margin-bottom:12px;}
   .popup-link{
     display:flex;align-items:center;justify-content:center;gap:6px;
-    background:#03C75A;color:#fff;
-    font-size:13px;font-weight:700;
-    padding:9px 0;border-radius:8px;
-    text-decoration:none;cursor:pointer;
-    border:none;width:100%;
+    background:#03C75A;color:#fff;font-size:13px;font-weight:700;
+    padding:9px 0;border-radius:8px;text-decoration:none;
   }
   .popup-link:hover{background:#02b350;}
 </style>
@@ -85,7 +88,7 @@
 
 <div class="legend" id="legend"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/openlayers/4.6.5/ol.min.js"></script>
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=6b405cb4a7136cdda5eca71458a30cb2"></script>
 <script>
 const cats = {
   "한식":        {color:"#D85A30", emoji:"🍚"},
@@ -143,99 +146,76 @@ const raw = [
 ];
 raw.forEach(d => d.bucket = bucket(d.cat));
 
-const apiKey = "11601CF0-29CA-3D27-A7F6-DD834C6F3E94";
-
-// VWorld 타일 레이어
-const vworldLayer = new ol.layer.Tile({
-  source: new ol.source.XYZ({
-    url: 'https://api.vworld.kr/req/wmts/1.0.0/'+apiKey+'/Base/{z}/{y}/{x}.png'
-  })
+// 지도 생성
+const mapContainer = document.getElementById('map');
+const map = new kakao.maps.Map(mapContainer, {
+  center: new kakao.maps.LatLng(37.5703, 126.9795),
+  level: 4
 });
 
-// 벡터 소스 (마커)
-const vectorSource = new ol.source.Vector();
+// 줌 컨트롤
+map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
 
-// 마커 추가
-raw.forEach((item, idx) => {
-  const d = cats[item.bucket];
-  const feature = new ol.Feature({
-    geometry: new ol.geom.Point(ol.proj.fromLonLat([item.lng, item.lat])),
-    name: item.n,
-    category: item.bucket,
-    cat: item.cat,
-    addr: item.addr,
-    status: item.status,
-    emoji: d.emoji,
-    color: d.color
-  });
-  vectorSource.addFeature(feature);
-});
+let currentPopup = null;
 
-// 스타일 함수
-function getStyle(feature) {
-  const d = cats[feature.get('category')];
-  const emoji = d.emoji;
-  const color = d.color;
-  
-  return new ol.style.Style({
-    image: new ol.style.RegularShape({
-      fill: new ol.style.Fill({color: color}),
-      stroke: new ol.style.Stroke({color: '#fff', width: 2}),
-      points: 4,
-      radius: 11,
-      rotation: Math.PI / 4
-    })
-  });
+function naverUrl(item){
+  return "https://map.naver.com/v5/search/"+encodeURIComponent(item.n+" "+item.addr.split(" ").slice(0,3).join(" "));
 }
 
-const vectorLayer = new ol.layer.Vector({
-  source: vectorSource,
-  style: getStyle
+raw.forEach((item)=>{
+  const d = cats[item.bucket];
+  const pos = new kakao.maps.LatLng(item.lat, item.lng);
+
+  // 풍선 마커 오버레이
+  const pillEl = document.createElement('div');
+  pillEl.className = 'pill';
+  pillEl.innerHTML = '<span class="pill-icon" style="background:'+d.color+'">'+d.emoji+'</span>'+item.n;
+
+  const pillOverlay = new kakao.maps.CustomOverlay({
+    position: pos,
+    content: pillEl,
+    xAnchor: 0.5,
+    yAnchor: 0.5,
+    clickable: true
+  });
+  pillOverlay.setMap(map);
+
+  // 팝업 오버레이 (닫힌 상태로 준비)
+  const popupEl = document.createElement('div');
+  popupEl.className = 'popup';
+  popupEl.innerHTML =
+    '<button class="popup-close">&times;</button>'+
+    '<div class="popup-badge"><span style="font-size:14px">'+d.emoji+'</span> '+item.bucket+'</div>'+
+    '<div class="popup-name">'+item.n+(item.status==="신규"?'<span class="popup-new">NEW</span>':'')+'</div>'+
+    '<div class="popup-addr">'+item.addr+'</div>'+
+    '<a class="popup-link" href="'+naverUrl(item)+'" target="_blank" rel="noopener">🗺️ 네이버 지도에서 보기</a>';
+
+  const popupOverlay = new kakao.maps.CustomOverlay({
+    position: pos,
+    content: popupEl,
+    xAnchor: 0.5,
+    yAnchor: 1,
+    zIndex: 100
+  });
+
+  // 닫기 버튼
+  popupEl.querySelector('.popup-close').addEventListener('click', ()=>{
+    popupOverlay.setMap(null);
+    if(currentPopup === popupOverlay) currentPopup = null;
+  });
+
+  // 마커 클릭 → 팝업 열기
+  pillEl.addEventListener('click', ()=>{
+    if(currentPopup) currentPopup.setMap(null);
+    popupOverlay.setMap(map);
+    currentPopup = popupOverlay;
+    map.panTo(pos);
+  });
 });
 
-// 맵 생성
-const map = new ol.Map({
-  layers: [vworldLayer, vectorLayer],
-  target: 'map',
-  view: new ol.View({
-    center: ol.proj.fromLonLat([126.9795, 37.5703]),
-    zoom: 16
-  })
-});
-
-// 팝업
-const popupContainer = document.createElement('div');
-popupContainer.className = 'ol-popup';
-popupContainer.style.display = 'none';
-
-const popupContent = document.createElement('div');
-popupContent.className = 'popup-content';
-popupContainer.appendChild(popupContent);
-document.body.appendChild(popupContainer);
-
-const popup = new ol.Overlay({
-  element: popupContainer
-});
-map.addOverlay(popup);
-
-// 마커 클릭 이벤트
-map.on('click', (evt) => {
-  const feature = map.forEachFeatureAtPixel(evt.pixel, (f) => f);
-  if (feature) {
-    const d = cats[feature.get('category')];
-    const naverUrl = 'https://map.naver.com/v5/search/'+encodeURIComponent(feature.get('name')+' '+feature.get('addr').split(' ').slice(0,3).join(' '));
-    
-    popupContent.innerHTML = 
-      '<div class="popup-badge"><span style="font-size:14px">'+d.emoji+'</span> '+feature.get('category')+'</div>'+
-      '<div class="popup-name">'+feature.get('name')+(feature.get('status')==="신규"?'<span class="popup-new">NEW</span>':'')+'</div>'+
-      '<div class="popup-addr">'+feature.get('addr')+'</div>'+
-      '<a class="popup-link" href="'+naverUrl+'" target="_blank" rel="noopener">🗺️ 네이버 지도에서 보기</a>';
-    
-    popup.setPosition(evt.coordinate);
-    popupContainer.style.display = 'block';
-  } else {
-    popupContainer.style.display = 'none';
-  }
+// 지도 빈 곳 클릭 → 팝업 닫기
+kakao.maps.event.addListener(map, 'click', ()=>{
+  if(currentPopup){ currentPopup.setMap(null); currentPopup = null; }
 });
 
 // 범례
