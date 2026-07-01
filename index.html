@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>식권맵 · 을지로입구·시청·광화문·종각</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{width:100%;height:100%;font-family:"Helvetica Neue","Apple SD Gothic Neo","Malgun Gothic",sans-serif;}
+
+  #map{width:100%;height:100%;}
+
+  /* 상단 타이틀바 */
+  .topbar{
+    position:absolute;top:14px;left:50%;transform:translateX(-50%);
+    z-index:600;
+    background:#fff;
+    border-radius:999px;
+    padding:8px 20px;
+    box-shadow:0 2px 12px rgba(0,0,0,0.15);
+    display:flex;align-items:center;gap:12px;
+    white-space:nowrap;
+  }
+  .topbar h1{font-size:14px;font-weight:700;color:#1F2421;}
+  .topbar .divider{color:#ccc;}
+  .topbar .sub{font-size:12px;color:#6B6F68;}
+
+  /* 범례 */
+  .legend{
+    position:absolute;bottom:30px;left:18px;z-index:500;
+    background:#fff;border:1px solid #E3E0D6;border-radius:12px;
+    padding:10px 14px;font-size:11px;color:#6B6F68;
+    box-shadow:0 2px 10px rgba(0,0,0,0.08);
+  }
+  .legend-title{font-weight:700;color:#1F2421;margin-bottom:6px;font-size:11.5px;}
+  .legend-row{display:flex;align-items:center;gap:7px;margin:3px 0;}
+  .legend-dot{
+    width:18px;height:18px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;font-size:9px;
+  }
+
+  /* 풍선 마커 */
+  .price-pill{
+    background:#fff;
+    border:1.5px solid #1F2421;
+    border-radius:999px;
+    padding:4px 10px 4px 4px;
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:11.5px;font-weight:700;color:#1F2421;
+    white-space:nowrap;
+    max-width:160px;overflow:hidden;text-overflow:ellipsis;
+    box-shadow:0 1px 5px rgba(0,0,0,0.18);
+    cursor:pointer;
+    transition:transform .1s,box-shadow .1s;
+  }
+  .price-pill:hover{transform:scale(1.06);box-shadow:0 2px 10px rgba(0,0,0,0.22);}
+  .price-pill.selected{
+    border-color:#1F8A5C;
+    box-shadow:0 0 0 3px #E8F5EE,0 2px 10px rgba(0,0,0,0.18);
+    transform:scale(1.08);
+  }
+  .pill-icon{
+    width:20px;height:20px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;font-size:11px;
+  }
+
+  /* 팝업 */
+  .leaflet-popup-content-wrapper{border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,0.15);}
+  .leaflet-popup-content{margin:14px 16px;min-width:200px;}
+  .popup-badge{
+    display:inline-flex;align-items:center;gap:5px;
+    font-size:11px;color:#6B6F68;margin-bottom:7px;
+  }
+  .popup-name{font-weight:700;font-size:15px;color:#1F2421;margin-bottom:5px;line-height:1.3;}
+  .popup-new{
+    display:inline-block;font-size:10px;font-weight:700;
+    background:#FFF1E5;color:#B5491F;
+    padding:1px 6px;border-radius:4px;margin-left:5px;vertical-align:middle;
+  }
+  .popup-addr{font-size:12px;color:#6B6F68;line-height:1.5;margin-bottom:12px;}
+  .popup-link{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    background:#03C75A;color:#fff;
+    font-size:13px;font-weight:700;
+    padding:9px 0;border-radius:8px;
+    text-decoration:none;
+  }
+  .popup-link:hover{background:#02b350;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="topbar">
+  <h1>🍽️ 식권맵</h1>
+  <span class="divider">|</span>
+  <span class="sub">을지로입구역 · 시청역 · 광화문역 · 종각역 일대 · 총 27개 가맹점</span>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const cats = {
+  "한식":        {color:"#D85A30", emoji:"🍚"},
+  "분식":        {color:"#D4537E", emoji:"🍢"},
+  "면류·중식":   {color:"#1F8A5C", emoji:"🍜"},
+  "돈가스·일식": {color:"#185FA5", emoji:"🍱"},
+  "부대찌개·전골":{color:"#993C1D", emoji:"🍲"},
+  "샐러드":      {color:"#639922", emoji:"🥗"},
+  "죽/비빔밥":   {color:"#534AB7", emoji:"🍙"},
+  "패스트푸드":  {color:"#BA7517", emoji:"🍔"},
+  "만두":        {color:"#3C3489", emoji:"🥟"}
+};
+
+function bucket(cat){
+  if(cat.startsWith("한식")) return "한식";
+  if(cat.startsWith("분식")) return "분식";
+  if(cat.includes("면") || cat.includes("중식")) return "면류·중식";
+  if(cat.includes("돈가스") || cat.includes("일식")) return "돈가스·일식";
+  if(cat.includes("부대찌개") || cat.includes("전골")) return "부대찌개·전골";
+  if(cat.includes("샐러드")) return "샐러드";
+  if(cat.includes("죽")) return "죽/비빔밥";
+  if(cat.includes("패스트푸드")) return "패스트푸드";
+  if(cat.includes("만두")) return "만두";
+  return "한식";
+}
+
+const raw = [
+  {n:"광화문미진 본관",   cat:"한식·면류",           addr:"서울 종로구 종로 19 2층 211-1호",                          status:"기존", lat:37.5706811, lng:126.98018},
+  {n:"다담정식",          cat:"한식·백반",            addr:"서울 종로구 청계천로 35 관정빌딩 지하1층",                  status:"기존", lat:37.5693577, lng:126.9814161},
+  {n:"마라공방 종각2호점",cat:"면류·중식·마라탕",     addr:"서울 종로구 종로 19 1층",                                   status:"기존", lat:37.5710098, lng:126.9798608},
+  {n:"마포만두 시청점",   cat:"만두·분식",            addr:"서울 중구 남대문로9길 51 효덕빌딩",                          status:"기존", lat:37.5668437, lng:126.9795335},
+  {n:"만짱카츠",          cat:"돈가스·일식",           addr:"서울 종로구 종로 19 지하1층",                               status:"기존", lat:37.5711122, lng:126.9797316},
+  {n:"선미원",            cat:"한식",                 addr:"서울 종로구 종로 14",                                       status:"기존", lat:37.5697286, lng:126.9788375},
+  {n:"신의주찹쌀진순대 종로구청점", cat:"한식·순대국", addr:"서울 종로구 종로 19 르메이에르종로타운 2층",                status:"기존", lat:37.5703955, lng:126.9795526},
+  {n:"오한수우육면가 르메이에르점", cat:"면류·중식·우육면", addr:"서울 종로구 종로 19 르메이에르종로타운 지하1층",      status:"기존", lat:37.5708033, lng:126.9798544},
+  {n:"이화수전통육개장 서울무교점", cat:"한식·육개장", addr:"서울 중구 다동길 16 지상1층",                              status:"기존", lat:37.5676521, lng:126.980134},
+  {n:"전주콩나물국밥 르메이에르점", cat:"한식·국밥",  addr:"서울 종로구 종로 19 르메이에르 지하1층",                    status:"기존", lat:37.5708033, lng:126.97984},
+  {n:"풍년옥",            cat:"한식·설렁탕",          addr:"서울특별시 종로구 새문안로7길 26",                           status:"기존", lat:37.5714131, lng:126.9750473},
+  {n:"한일",              cat:"한식",                 addr:"서울 종로구 종로 14",                                       status:"기존", lat:37.5697286, lng:126.9789375},
+  {n:"호호미역 종로점",   cat:"한식·미역국",          addr:"서울 종로구 종로 19 르메이에르 지하1층",                     status:"기존", lat:37.571013,  lng:126.980007},
+  {n:"흥진옥",            cat:"한식·해장국",          addr:"서울 종로구 종로5길 19-12",                                  status:"기존", lat:37.5722,    lng:126.98022},
+  {n:"카오리",            cat:"돈가스·일식",           addr:"서울 종로구 종로 19 2층 211-1호",                           status:"신규", lat:37.5706811, lng:126.98014},
+  {n:"꿈떡꿈떡 종로본점", cat:"분식·떡볶이",          addr:"서울 종로구 종로 19 지하1층",                                status:"신규", lat:37.5708033, lng:126.97982},
+  {n:"완백부대찌개 고사리꽃삼겹 종로르메이에르점", cat:"부대찌개·전골", addr:"서울 종로구 종로 19, 2층 201-1호, 201-2호", status:"신규", lat:37.5706, lng:126.9801},
+  {n:"푸드까페김밥천국 종로점", cat:"분식",           addr:"서울 종로구 종로 19 르메이에르종로타운 1층 106호",            status:"신규", lat:37.5707411, lng:126.9798179},
+  {n:"점점점 샐러드",     cat:"샐러드",               addr:"서울 종로구 종로 19 르메이에르종로타운 B116A-3호 지하1층",   status:"신규", lat:37.5705,    lng:126.97992},
+  {n:"슬로우캘리 광화문점", cat:"샐러드",             addr:"서울특별시 종로구 종로 19 (종로1가) 1층 121-1호",            status:"신규", lat:37.5706,    lng:126.98025},
+  {n:"강창구찹쌀진순대 종로점", cat:"한식·순대국",    addr:"서울 종로구 종로 19 1층 113-2호, 114-1호",                   status:"신규", lat:37.570687,  lng:126.9797309},
+  {n:"한마루",            cat:"부대찌개·전골·제육볶음", addr:"서울특별시 종로구 종로 19 르메이에르종로타운 2층",          status:"신규", lat:37.5707565, lng:126.9798026},
+  {n:"본죽&비빔밥 종로르메이에르점", cat:"죽/비빔밥", addr:"서울특별시 종로구 종로1가 24 르메이에르종로타운 지하1층",    status:"신규", lat:37.5707371, lng:126.9798765},
+  {n:"KFC 청계천",        cat:"패스트푸드·햄버거",    addr:"서울 종로구 청계천로 35 관정빌딩 1층",                       status:"신규", lat:37.5692317, lng:126.9815556},
+  {n:"김가네 무교점",     cat:"분식",                 addr:"서울특별시 중구 무교동 25-1 1층",                            status:"신규", lat:37.5671533, lng:126.9787566},
+  {n:"리본레시피 광화문점", cat:"샐러드·비빔밥",      addr:"서울 종로구 새문안로 92 지하1층 109-1호",                    status:"신규", lat:37.5697261, lng:126.9749035},
+  {n:"맘스터치 종각역점", cat:"패스트푸드·햄버거",    addr:"서울특별시 종로구 종로 62-1",                                status:"신규", lat:37.5698951, lng:126.9843473}
+];
+raw.forEach(d => d.bucket = bucket(d.cat));
+
+const map = L.map("map", {scrollWheelZoom:true, zoomControl:true}).setView([37.5703, 126.9795], 16);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
+  maxZoom:19, attribution:'&copy; OpenStreetMap contributors &copy; CARTO'
+}).addTo(map);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", {
+  maxZoom:19, opacity:0.55
+}).addTo(map);
+
+// 범례
+const legendEl = document.getElementById("legend");
+let lhtml = '<div class="legend-title">업종</div>';
+Object.keys(cats).forEach(k=>{
+  const d = cats[k];
+  lhtml += '<div class="legend-row"><span class="legend-dot" style="background:'+d.color+'">'+d.emoji+'</span>'+k+'</div>';
+});
+legendEl.innerHTML = lhtml;
+
+// 마커
+let selectedMarker = null;
+
+function pillIcon(item, selected){
+  const d = cats[item.bucket];
+  return L.divIcon({
+    html:'<div class="price-pill'+(selected?' selected':'')+'">'+
+           '<span class="pill-icon" style="background:'+d.color+'">'+d.emoji+'</span>'+
+           item.n+
+         '</div>',
+    className:"",
+    iconSize:null,
+    iconAnchor:[20,14]
+  });
+}
+
+function naverUrl(item){
+  return "https://map.naver.com/v5/search/"+encodeURIComponent(item.n+" "+item.addr.split(" ").slice(0,3).join(" "));
+}
+
+raw.forEach((item, idx)=>{
+  const marker = L.marker([item.lat, item.lng], {icon: pillIcon(item, false)});
+  const d = cats[item.bucket];
+  const popup = L.popup({maxWidth:260, minWidth:220}).setContent(
+    '<div class="popup-badge"><span style="font-size:14px">'+d.emoji+'</span> '+item.bucket+'</div>'+
+    '<div class="popup-name">'+item.n+(item.status==="신규"?'<span class="popup-new">NEW</span>':'')+'</div>'+
+    '<div class="popup-addr">'+item.addr+'</div>'+
+    '<a class="popup-link" href="'+naverUrl(item)+'" target="_blank" rel="noopener">'+
+      '🗺️ 네이버 지도에서 보기'+
+    '</a>'
+  );
+  marker.bindPopup(popup);
+  marker.on("click", ()=>{
+    if(selectedMarker && selectedMarker !== marker){
+      selectedMarker.setIcon(pillIcon(raw[selectedMarker._idx], false));
+    }
+    marker.setIcon(pillIcon(item, true));
+    selectedMarker = marker;
+    selectedMarker._idx = idx;
+  });
+  marker.on("popupclose", ()=>{
+    marker.setIcon(pillIcon(item, false));
+    selectedMarker = null;
+  });
+  marker.addTo(map);
+});
+</script>
+
+</body>
+</html>
