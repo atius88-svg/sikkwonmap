@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>식권맵 · 을지로입구·시청·광화문·종각</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/openlayers/4.6.5/ol.min.css">
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{width:100%;height:100%;font-family:"Helvetica Neue","Apple SD Gothic Neo","Malgun Gothic",sans-serif;}
 
-  #map{width:100%;height:100%;}
+  #map{width:100%;height:100%;position:relative;}
 
   /* 상단 타이틀바 */
   .topbar{
@@ -32,6 +32,7 @@
     background:#fff;border:1px solid #E3E0D6;border-radius:12px;
     padding:10px 14px;font-size:11px;color:#6B6F68;
     box-shadow:0 2px 10px rgba(0,0,0,0.08);
+    max-height:400px;overflow-y:auto;
   }
   .legend-title{font-weight:700;color:#1F2421;margin-bottom:6px;font-size:11.5px;}
   .legend-row{display:flex;align-items:center;gap:7px;margin:3px 0;}
@@ -40,34 +41,16 @@
     display:flex;align-items:center;justify-content:center;font-size:9px;
   }
 
-  /* 풍선 마커 */
-  .price-pill{
-    background:#fff;
-    border:1.5px solid #1F2421;
-    border-radius:999px;
-    padding:4px 10px 4px 4px;
-    display:inline-flex;align-items:center;gap:6px;
-    font-size:11.5px;font-weight:700;color:#1F2421;
-    white-space:nowrap;
-    max-width:160px;overflow:hidden;text-overflow:ellipsis;
-    box-shadow:0 1px 5px rgba(0,0,0,0.18);
-    cursor:pointer;
-    transition:transform .1s,box-shadow .1s;
+  /* OpenLayers 팝업 오버라이드 */
+  .ol-popup{
+    position:absolute;background-color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.15);
+    padding:0;border-radius:14px;border:none;
+    bottom:12px;left:-50px;min-width:260px;
   }
-  .price-pill:hover{transform:scale(1.06);box-shadow:0 2px 10px rgba(0,0,0,0.22);}
-  .price-pill.selected{
-    border-color:#1F8A5C;
-    box-shadow:0 0 0 3px #E8F5EE,0 2px 10px rgba(0,0,0,0.18);
-    transform:scale(1.08);
-  }
-  .pill-icon{
-    width:20px;height:20px;border-radius:50%;flex-shrink:0;
-    display:flex;align-items:center;justify-content:center;font-size:11px;
-  }
-
-  /* 팝업 */
-  .leaflet-popup-content-wrapper{border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,0.15);}
-  .leaflet-popup-content{margin:14px 16px;min-width:200px;}
+  .ol-popup:after{display:none;}
+  .ol-popup-closer{display:none;}
+  .popup-content{padding:14px 16px;}
+  
   .popup-badge{
     display:inline-flex;align-items:center;gap:5px;
     font-size:11px;color:#6B6F68;margin-bottom:7px;
@@ -84,7 +67,8 @@
     background:#03C75A;color:#fff;
     font-size:13px;font-weight:700;
     padding:9px 0;border-radius:8px;
-    text-decoration:none;
+    text-decoration:none;cursor:pointer;
+    border:none;width:100%;
   }
   .popup-link:hover{background:#02b350;}
 </style>
@@ -101,7 +85,7 @@
 
 <div class="legend" id="legend"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/openlayers/4.6.5/ol.min.js"></script>
 <script>
 const cats = {
   "한식":        {color:"#D85A30", emoji:"🍚"},
@@ -159,13 +143,100 @@ const raw = [
 ];
 raw.forEach(d => d.bucket = bucket(d.cat));
 
-const map = L.map("map", {scrollWheelZoom:true, zoomControl:true}).setView([37.5703, 126.9795], 16);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
-  maxZoom:19, attribution:'&copy; OpenStreetMap contributors &copy; CARTO'
-}).addTo(map);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", {
-  maxZoom:19, opacity:0.55
-}).addTo(map);
+const apiKey = "11601CF0-29CA-3D27-A7F6-DD834C6F3E94";
+
+// VWorld 타일 레이어
+const vworldLayer = new ol.layer.Tile({
+  source: new ol.source.XYZ({
+    url: 'https://api.vworld.kr/req/wmts/1.0.0/'+apiKey+'/Base/{z}/{y}/{x}.png'
+  })
+});
+
+// 벡터 소스 (마커)
+const vectorSource = new ol.source.Vector();
+
+// 마커 추가
+raw.forEach((item, idx) => {
+  const d = cats[item.bucket];
+  const feature = new ol.Feature({
+    geometry: new ol.geom.Point(ol.proj.fromLonLat([item.lng, item.lat])),
+    name: item.n,
+    category: item.bucket,
+    cat: item.cat,
+    addr: item.addr,
+    status: item.status,
+    emoji: d.emoji,
+    color: d.color
+  });
+  vectorSource.addFeature(feature);
+});
+
+// 스타일 함수
+function getStyle(feature) {
+  const d = cats[feature.get('category')];
+  const emoji = d.emoji;
+  const color = d.color;
+  
+  return new ol.style.Style({
+    image: new ol.style.RegularShape({
+      fill: new ol.style.Fill({color: color}),
+      stroke: new ol.style.Stroke({color: '#fff', width: 2}),
+      points: 4,
+      radius: 11,
+      rotation: Math.PI / 4
+    })
+  });
+}
+
+const vectorLayer = new ol.layer.Vector({
+  source: vectorSource,
+  style: getStyle
+});
+
+// 맵 생성
+const map = new ol.Map({
+  layers: [vworldLayer, vectorLayer],
+  target: 'map',
+  view: new ol.View({
+    center: ol.proj.fromLonLat([126.9795, 37.5703]),
+    zoom: 16
+  })
+});
+
+// 팝업
+const popupContainer = document.createElement('div');
+popupContainer.className = 'ol-popup';
+popupContainer.style.display = 'none';
+
+const popupContent = document.createElement('div');
+popupContent.className = 'popup-content';
+popupContainer.appendChild(popupContent);
+document.body.appendChild(popupContainer);
+
+const popup = new ol.Overlay({
+  element: popupContainer
+});
+map.addOverlay(popup);
+
+// 마커 클릭 이벤트
+map.on('click', (evt) => {
+  const feature = map.forEachFeatureAtPixel(evt.pixel, (f) => f);
+  if (feature) {
+    const d = cats[feature.get('category')];
+    const naverUrl = 'https://map.naver.com/v5/search/'+encodeURIComponent(feature.get('name')+' '+feature.get('addr').split(' ').slice(0,3).join(' '));
+    
+    popupContent.innerHTML = 
+      '<div class="popup-badge"><span style="font-size:14px">'+d.emoji+'</span> '+feature.get('category')+'</div>'+
+      '<div class="popup-name">'+feature.get('name')+(feature.get('status')==="신규"?'<span class="popup-new">NEW</span>':'')+'</div>'+
+      '<div class="popup-addr">'+feature.get('addr')+'</div>'+
+      '<a class="popup-link" href="'+naverUrl+'" target="_blank" rel="noopener">🗺️ 네이버 지도에서 보기</a>';
+    
+    popup.setPosition(evt.coordinate);
+    popupContainer.style.display = 'block';
+  } else {
+    popupContainer.style.display = 'none';
+  }
+});
 
 // 범례
 const legendEl = document.getElementById("legend");
@@ -175,53 +246,6 @@ Object.keys(cats).forEach(k=>{
   lhtml += '<div class="legend-row"><span class="legend-dot" style="background:'+d.color+'">'+d.emoji+'</span>'+k+'</div>';
 });
 legendEl.innerHTML = lhtml;
-
-// 마커
-let selectedMarker = null;
-
-function pillIcon(item, selected){
-  const d = cats[item.bucket];
-  return L.divIcon({
-    html:'<div class="price-pill'+(selected?' selected':'')+'">'+
-           '<span class="pill-icon" style="background:'+d.color+'">'+d.emoji+'</span>'+
-           item.n+
-         '</div>',
-    className:"",
-    iconSize:null,
-    iconAnchor:[20,14]
-  });
-}
-
-function naverUrl(item){
-  return "https://map.naver.com/v5/search/"+encodeURIComponent(item.n+" "+item.addr.split(" ").slice(0,3).join(" "));
-}
-
-raw.forEach((item, idx)=>{
-  const marker = L.marker([item.lat, item.lng], {icon: pillIcon(item, false)});
-  const d = cats[item.bucket];
-  const popup = L.popup({maxWidth:260, minWidth:220}).setContent(
-    '<div class="popup-badge"><span style="font-size:14px">'+d.emoji+'</span> '+item.bucket+'</div>'+
-    '<div class="popup-name">'+item.n+(item.status==="신규"?'<span class="popup-new">NEW</span>':'')+'</div>'+
-    '<div class="popup-addr">'+item.addr+'</div>'+
-    '<a class="popup-link" href="'+naverUrl(item)+'" target="_blank" rel="noopener">'+
-      '🗺️ 네이버 지도에서 보기'+
-    '</a>'
-  );
-  marker.bindPopup(popup);
-  marker.on("click", ()=>{
-    if(selectedMarker && selectedMarker !== marker){
-      selectedMarker.setIcon(pillIcon(raw[selectedMarker._idx], false));
-    }
-    marker.setIcon(pillIcon(item, true));
-    selectedMarker = marker;
-    selectedMarker._idx = idx;
-  });
-  marker.on("popupclose", ()=>{
-    marker.setIcon(pillIcon(item, false));
-    selectedMarker = null;
-  });
-  marker.addTo(map);
-});
 </script>
 
 </body>
